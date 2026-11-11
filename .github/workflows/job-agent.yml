@@ -1,0 +1,27 @@
+name: job-agent
+
+on:
+  schedule:
+    - cron: "0 15 * * *"   # 12h em São Paulo (UTC-3)
+    - cron: "0 22 * * *"   # 19h em São Paulo
+  workflow_dispatch:        # botão "Run workflow" para rodar na hora
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+      - run: python -m agent.main
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          STANDARD_ANSWERS: ${{ secrets.STANDARD_ANSWERS }}
