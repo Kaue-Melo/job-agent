@@ -12,6 +12,15 @@ run:
   max_age_days: 7                # ignora vagas publicadas há mais de N dias
   timezone: "America/Sao_Paulo"
   sources: [remotive, remoteok, weworkremotely, himalayas]
+  # Busca por termo na Himalayas: cada termo x página = 1 requisição (20 vagas)
+  search_terms:
+    - data analyst
+    - business intelligence
+    - power bi
+    - analytics engineer
+    - data engineer
+  search_country: "BR"           # só vagas que aceitam candidatos deste país
+  search_pages: 2
 
 sheets:
   monitor_tab: "MONITOR"
@@ -40,7 +49,7 @@ titles:
     - '\bsql\b'
     - 'data visuali[sz]'
   exclude:
-    - '\bsenior\b'
+    - '\bs[eê]nior\b'
     - '\bsr\b\.?'
     - '\blead\b'
     - '\bprincipal\b'

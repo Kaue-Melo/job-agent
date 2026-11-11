@@ -7,6 +7,7 @@ LinkedIn, Glassdoor e Jobright entram na fase 2, pelos alertas no Gmail.
 import html
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 import feedparser
@@ -39,7 +40,7 @@ def parse_date(value) -> datetime | None:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def fetch_remotive() -> list[Job]:
+def fetch_remotive(cfg: dict) -> list[Job]:
     # A Remotive pede poucas chamadas por dia: 2 execuções estão dentro do uso razoável.
     r = requests.get("https://remotive.com/api/remote-jobs", params={"category": "data"},
                      headers=HEADERS, timeout=TIMEOUT)
@@ -53,7 +54,7 @@ def fetch_remotive() -> list[Job]:
     ]
 
 
-def fetch_remoteok() -> list[Job]:
+def fetch_remoteok(cfg: dict) -> list[Job]:
     r = requests.get("https://remoteok.com/api", headers=HEADERS, timeout=TIMEOUT)
     r.raise_for_status()
     jobs = []
@@ -68,7 +69,7 @@ def fetch_remoteok() -> list[Job]:
     return jobs
 
 
-def fetch_weworkremotely() -> list[Job]:
+def fetch_weworkremotely(cfg: dict) -> list[Job]:
     r = requests.get("https://weworkremotely.com/remote-jobs.rss", headers=HEADERS, timeout=TIMEOUT)
     r.raise_for_status()
     jobs = []
@@ -84,25 +85,43 @@ def fetch_weworkremotely() -> list[Job]:
     return jobs
 
 
-def fetch_himalayas(pages: int = 5, page_size: int = 20) -> list[Job]:
-    jobs = []
-    for offset in range(0, pages * page_size, page_size):
-        r = requests.get("https://himalayas.app/jobs/api", params={"limit": page_size, "offset": offset},
-                         headers=HEADERS, timeout=TIMEOUT)
-        r.raise_for_status()
-        batch = r.json().get("jobs", [])
-        if not batch:
-            break
-        for j in batch:
-            restrictions = j.get("locationRestrictions") or []
-            names = [x if isinstance(x, str) else x.get("name", "") for x in restrictions]
-            jobs.append(Job(
-                title=j.get("title", ""), company=j.get("companyName", ""),
-                url=j.get("applicationLink") or j.get("guid", ""),
-                description=clean_html(j.get("description") or j.get("excerpt")),
-                # Sem restrição na Himalayas = aceita qualquer país
-                location=", ".join(n for n in names if n) or "Worldwide",
-                source="Himalayas", published=parse_date(j.get("pubDate"))))
+def _himalayas_job(j: dict) -> Job:
+    restrictions = j.get("locationRestrictions") or []
+    names = [x if isinstance(x, str) else x.get("name", "") for x in restrictions]
+    return Job(
+        title=j.get("title", ""), company=j.get("companyName", ""),
+        url=j.get("applicationLink") or j.get("guid", ""),
+        description=clean_html(j.get("description") or j.get("excerpt")),
+        # Sem restrição na Himalayas = aceita qualquer país
+        location=", ".join(n for n in names if n) or "Worldwide",
+        source="Himalayas", published=parse_date(j.get("pubDate")))
+
+
+def fetch_himalayas(cfg: dict) -> list[Job]:
+    """Busca por termo (20 vagas por página), já filtrando vagas abertas ao país."""
+    run = cfg["run"]
+    terms = run.get("search_terms") or ["data analyst"]
+    country = run.get("search_country", "")
+    pages = int(run.get("search_pages", 1))
+    jobs, seen = [], set()
+    for term in terms:
+        for page in range(1, pages + 1):
+            params = {"q": term, "sort": "recent", "page": page}
+            if country:
+                params["country"] = country
+            r = requests.get("https://himalayas.app/jobs/api/search", params=params,
+                             headers=HEADERS, timeout=TIMEOUT)
+            r.raise_for_status()
+            batch = r.json().get("jobs", [])
+            for j in batch:
+                guid = j.get("guid") or j.get("applicationLink")
+                if guid in seen:
+                    continue
+                seen.add(guid)
+                jobs.append(_himalayas_job(j))
+            if len(batch) < 20:      # última página deste termo
+                break
+            time.sleep(1)            # educação com a API
     return jobs
 
 
@@ -114,12 +133,12 @@ SOURCES = {
 }
 
 
-def collect(source_names: list[str]) -> tuple[list[Job], dict[str, str]]:
-    """Roda todas as fontes. Devolve (vagas, status por fonte)."""
+def collect(cfg: dict) -> tuple[list[Job], dict[str, str]]:
+    """Roda as fontes listadas em run.sources. Devolve (vagas, status por fonte)."""
     jobs, status = [], {}
-    for name in source_names:
+    for name in cfg["run"]["sources"]:
         try:
-            found = SOURCES[name]()
+            found = SOURCES[name](cfg)
             jobs.extend(found)
             status[name] = f"{len(found)} vagas"
         except Exception as exc:  # uma fonte quebrada não derruba as outras

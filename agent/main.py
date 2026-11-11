@@ -32,7 +32,7 @@ def run(dry_run: bool = False) -> None:
     period = "manhã" if now.hour < 15 else "noite"
 
     # 1) Coleta
-    jobs, source_status = collect(cfg["run"]["sources"])
+    jobs, source_status = collect(cfg)
     collected = len(jobs)
 
     # 2) Recência, título e duplicadas dentro do próprio lote
@@ -70,10 +70,12 @@ def run(dry_run: bool = False) -> None:
              "new": len(filtered), "sources": source_status}
     log.info("Resumo: %s | sugeridas: %d", stats, len(selected))
 
+    # Log de avaliações: aparece no terminal e no log do GitHub Actions
+    for e in sorted(evaluations, key=lambda e: -e.score):
+        log.info("%3d %-10s %-45s | %-20s | %-10s | %s", e.score, e.classification,
+                 e.job.title[:45], e.job.company[:20], e.job.source[:10], e.eligibility_reason[:60])
+
     if dry_run:
-        for e in sorted(evaluations, key=lambda e: -e.score):
-            print(f"{e.score:>3} {e.classification:<10} {e.job.title[:45]:<45} | "
-                  f"{e.job.company[:20]:<20} | {e.eligibility_reason[:60]}")
         return
 
     # 5) Registro e aviso

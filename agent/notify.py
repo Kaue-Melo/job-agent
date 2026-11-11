@@ -1,5 +1,6 @@
 import os
 import smtplib
+import time
 from email.message import EmailMessage
 from html import escape
 
@@ -39,13 +40,20 @@ def build_email(evaluations: list[Evaluation], promoted: list[str], stats: dict,
     return subject, body
 
 
-def send_email(subject: str, html_body: str) -> None:
+def send_email(subject: str, html_body: str, attempts: int = 3, wait: int = 10) -> None:
     sender = os.environ["GMAIL_ADDRESS"]
     msg = EmailMessage()
     msg["Subject"], msg["From"] = subject, sender
     msg["To"] = os.environ.get("NOTIFY_TO", sender)
     msg.set_content("Abra este e-mail em um cliente com suporte a HTML.")
     msg.add_alternative(html_body, subtype="html")
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-        smtp.login(sender, os.environ["GMAIL_APP_PASSWORD"])
-        smtp.send_message(msg)
+    for attempt in range(1, attempts + 1):
+        try:
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as smtp:
+                smtp.login(sender, os.environ["GMAIL_APP_PASSWORD"])
+                smtp.send_message(msg)
+            return
+        except (smtplib.SMTPException, OSError):
+            if attempt == attempts:
+                raise
+            time.sleep(wait * attempt)
