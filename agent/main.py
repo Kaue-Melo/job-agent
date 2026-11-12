@@ -5,6 +5,7 @@
 """
 import argparse
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,12 +25,23 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
+def run_period(now: datetime) -> str:
+    """Turno do e-mail. No GitHub Actions usa o horário agendado (cron em UTC),
+    não o horário real, porque o cron pode atrasar horas."""
+    schedule = os.environ.get("RUN_SCHEDULE", "").split()
+    if len(schedule) == 5 and schedule[1].isdigit():
+        hour_utc = int(schedule[1])
+        local_hour = (datetime.now(timezone.utc).replace(hour=hour_utc).astimezone(now.tzinfo)).hour
+        return "manhã" if local_hour < 15 else "noite"
+    return "manhã" if now.hour < 15 else "noite"
+
+
 def run(dry_run: bool = False) -> None:
     cfg = load_config()
     tz = ZoneInfo(cfg["run"]["timezone"])
     now = datetime.now(tz)
     today = now.strftime("%d/%m/%Y")
-    period = "manhã" if now.hour < 15 else "noite"
+    period = run_period(now)
 
     # 1) Coleta
     jobs, source_status = collect(cfg)

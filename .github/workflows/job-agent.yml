@@ -2,9 +2,20 @@ name: job-agent
 
 on:
   schedule:
-    - cron: "0 15 * * *"   # 12h em São Paulo (UTC-3)
-    - cron: "0 22 * * *"   # 19h em São Paulo
+    # Minutos "quebrados": o GitHub atrasa (ou pula) muito os crons em hora cheia.
+    # Agendado um pouco antes para compensar o atraso normal de alguns minutos.
+    - cron: "47 14 * * *"  # 11h47 em São Paulo (UTC-3) -> turno do meio-dia
+    - cron: "47 21 * * *"  # 18h47 em São Paulo         -> turno da noite
   workflow_dispatch:        # botão "Run workflow" para rodar na hora
+
+# Evita duas execuções ao mesmo tempo (ex.: um cron atrasado + um manual)
+concurrency:
+  group: job-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write            # só para o passo de keepalive abaixo
 
 jobs:
   run:
@@ -20,8 +31,17 @@ jobs:
       - run: python -m pytest -q
       - run: python -m agent.main
         env:
+          RUN_SCHEDULE: ${{ github.event.schedule }}   # define o turno mesmo se o cron atrasar
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           STANDARD_ANSWERS: ${{ secrets.STANDARD_ANSWERS }}
+      # Repositório público sem commits por 60 dias tem o agendamento desativado.
+      # Reativar o workflow pela API a cada execução renova esse prazo.
+      - name: Keepalive do agendamento
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/job-agent.yml/enable"
