@@ -38,9 +38,16 @@ def run(dry_run: bool = False) -> None:
     # 2) Recência, título e duplicadas dentro do próprio lote
     cutoff = datetime.now(timezone.utc) - timedelta(days=cfg["run"]["max_age_days"])
     include, exclude = compile_any(cfg["titles"]["include"]), compile_any(cfg["titles"]["exclude"])
-    seen, filtered = set(), []
+    domestic_loc = compile_any(cfg["domestic"]["location"])
+    domestic_title = compile_any(cfg["domestic"]["title"])
+    seen, filtered, domestic = set(), [], 0
     for j in jobs:
         if j.published and j.published < cutoff:
+            continue
+        # Vagas só no Brasil ficam de fora (antes do filtro de título,
+        # porque "Analista de BI" casaria com '\bbi\b')
+        if domestic_loc.search(j.location or "") or domestic_title.search(j.title):
+            domestic += 1
             continue
         if not include.search(j.title) or exclude.search(j.title):
             continue
@@ -66,7 +73,7 @@ def run(dry_run: bool = False) -> None:
     candidates.sort(key=lambda e: (PRIORITY[e.classification], -e.score))
     selected = candidates[: cfg["run"]["max_per_run"]]
 
-    stats = {"date": today, "collected": collected, "title_ok": title_ok,
+    stats = {"date": today, "collected": collected, "domestic": domestic, "title_ok": title_ok,
              "new": len(filtered), "sources": source_status}
     log.info("Resumo: %s | sugeridas: %d", stats, len(selected))
 
